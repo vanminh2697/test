@@ -1,0 +1,122 @@
+doFIL_SAVE
+	"Win32DialogをOpenし、ファイルの保存を行う。"
+
+	"権限チェック"
+
+	| C_FileName C_SearchStr A_Rec A_CsvList A_Temp A_CsvList2 fc param filename ret aList targetList |
+	parent notNil 
+		ifTrue: 
+			[(self 
+				kengenCheck: parent class screenID
+				mode: #update
+				password: false) ifFalse: [^false]].
+	self kengenCheckExcel == false ifTrue: [^false].
+	self clearMsg.
+	filename := self openSaveDialog.
+	filename isNil ifTrue: [^self].
+	self FIL_NM_SEA value: filename asString.
+	(self nilToSpace: self FIL_NM_SEA value) = '' ifTrue: [^false].
+
+	"書き込み可のチェック"
+	C_FileName := self FIL_NM_SEA value.
+	C_FileName asFilename canBeWritten 
+		ifFalse: 
+			[self warn: #W3544.
+			^false].
+	"self saveDefaultDir."	"フォルダ名保存"
+	C_SearchStr := '*.csv'.
+	(C_FileName 
+		findString: C_SearchStr
+		startingAt: 1
+		ignoreCase: true
+		useWildcards: true) = (0 to: 0) 
+		ifTrue: 
+			["CSVファイルの判定"
+
+			self warn: #W3542.
+			^self].
+
+	"親クラスのデータセットのチェック"
+	parent isNil ifTrue: [^false].
+	self fileLayout isNil ifTrue: [^false].
+	parent rowsList list size = 0 
+		ifTrue: 
+			[self warn: #W3545.
+			^self].
+
+	ret := parent canPerform: #csvSaveBefore.	"parent interaction"	"保存前の処理が必要ならアプリで実装する"
+	ret = false ifTrue: [^false].
+	aList := parent canPerform: #csvSaveList.	"parent interaction"	"アプリ側で特定のリストで保存したい場合に実装する"
+	aList class = List 
+		ifTrue: 
+			[targetList := aList copy	"リストの内容はアプリ側の責任　rowsList listと同じrowクラスを保持していること"]
+		ifFalse: [targetList := parent rowsList list copy].
+
+	"データの書き込み"
+	fc := self fileClass new: C_FileName encode: self fileCharacterEncode.
+	A_Rec := List new.
+	self fileLayout do: 
+			[:each | 
+			each size = 5 
+				ifTrue: [A_Rec add: (self getUserMessage: (each at: 5) with: each first)]
+				ifFalse: [A_Rec add: (self getColumLabel: each first)]].
+	A_CsvList := List new.
+	A_CsvList add: A_Rec asArray.
+	targetList do: 
+			[:each | 
+			(self canPerform: #csvIgnoreWriting: with: each) 
+				ifTrue: 
+					["保存したくない行があればアプリで記述"
+					A_CsvList2 := List new.
+					self fileLayout do: 
+							[:each2 | 
+							(each2 at: 2) = #C 
+								ifTrue: 
+									[(each perform: each2 first) size = 0 
+										ifTrue: [A_CsvList2 add: '' , '']
+										ifFalse: [A_CsvList2 add: '''' , (self removeCR: (each perform: each2 first))]]
+								ifFalse: 
+									[(each perform: each2 first) isNil 
+										ifTrue: [param := '']
+										ifFalse: 
+											[(each2 at: 2) = #D 
+												ifTrue: 
+													[((each perform: each2 first) isKindOf: Timestamp) 
+														ifTrue: 
+															[param := each perform: each2 first]
+														ifFalse: 
+															[param := each perform: each2 first]]
+												ifFalse: 
+													[(each2 at: 2) = #T 
+														ifTrue: 
+															[param := each perform: each2 first.
+															self truncateSeconds 
+																ifTrue: [param := param subtractSeconds: param second]]
+														ifFalse: 
+															[(each2 at: 2) = #DT 
+																ifTrue: 
+																	[((each perform: each2 first) isKindOf: Timestamp) 
+																		ifTrue: [param := each perform: each2 first]
+																		ifFalse: 
+																			[param := TimestampPrintPolicy print: (each perform: each2 first)
+																						using: GBLocaleInterface timestampOutputFormat]]
+																ifFalse: 
+																	[(each2 at: 2) = #N 
+																		ifTrue: 
+																			[param := (each perform: each2 first) printString reject: [:chr | chr = $s]]
+																		ifFalse: 
+																			[(each2 at: 2) = #B 
+																				ifTrue: 
+																					[param := self dataFilter: 'Boolean' value: (each perform: each2 first)]
+																				ifFalse: [param := each perform: each2 first]]]]]].
+									A_CsvList2 add: param]	"改行があればは削除"].
+					A_CsvList add: A_CsvList2]].
+	A_Temp := A_CsvList.
+	C_FileName asFilename canBeWritten 
+		ifTrue: 
+			[(fc writeAll: A_Temp) ifFalse: [^self].
+			self warn: #I3509]
+		ifFalse: 
+			[self warn: #W3544.
+			^self].
+	^self
