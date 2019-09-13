@@ -1,0 +1,51 @@
+doLAYOUT_DISP
+	"権限チェック"
+
+	| aList row data col fc b h offset maxHeight msgClass metaID |
+	parent notNil 
+		ifTrue: 
+			[(self 
+				kengenCheck: parent class screenID
+				mode: #update
+				password: false) ifFalse: [^false]].
+	parent isNil ifTrue: [^false].
+	self fileLayout isNil ifTrue: [^false].
+	aList := List new.
+	fc := self fileClass new.
+	msgClass := self class msgClass msgRepositoryClass.
+	fc separator: $,.
+	self fileLayout do: 
+			[:each | 
+			row := self rowClass new.
+			each size = 5 
+				ifTrue: [row ITE: (msgClass replaceToSpace: (self getUserMessage: (each at: 5) with: each first))]
+				ifFalse: [row ITE: (msgClass replaceToSpace: (self getColumLabel: each first))].
+			row ATT: (self checkATT: (each at: 2)).
+			data := each at: 3.
+			metaID := parent getMetaID: (each at: 1).
+			metaID notNil ifTrue:[data := parent metaSizeId: metaID]. 
+			data isNil ifTrue:[data := (each at: 3)].
+			data isString 
+				ifFalse: [row DAT_LEN: data]
+				ifTrue: 
+					[col := fc token: data.
+					row DAT_LEN: col first asNumber.
+					row DMP_DGT: col last asNumber.
+					row INT_DGT: row DAT_LEN - row DMP_DGT].
+			row NESS: (each at: 4) = #N.
+			aList add: row].
+	self rowsList list: aList.
+	b := self builder window displayBox.
+	h := (aList size + 1) * (self widgetAt: #rowsList) lineGrid.
+	offset := 127 + b top.	"微調整, 最大化するとtopがずれてしまうため"
+	maxHeight := 700.	"最大700までとする"
+	b bottom = maxHeight 
+		ifTrue: [b bottom: offset]
+		ifFalse: 
+			[offset + h > b bottom 
+				ifTrue: 
+					[b bottom + h > maxHeight 
+						ifTrue: [b bottom: maxHeight]
+						ifFalse: [b bottom: b bottom + h]]
+				ifFalse: [b bottom: offset]].
+	self builder window setDisplayBox: b
